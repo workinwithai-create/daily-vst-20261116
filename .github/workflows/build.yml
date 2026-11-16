@@ -1,0 +1,73 @@
+name: Build VST3
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Package artefacts
+        shell: bash
+        run: |
+          mkdir -p package
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # Windows: VST3 is a folder
+            if [ -d "build/VelvetAfterglow_artefacts/Release/VST3" ]; then
+              cd build/VelvetAfterglow_artefacts/Release
+              zip -r "../../../package/VelvetAfterglow-Windows-VST3.zip" VST3
+              zip -r "../../../package/VelvetAfterglow-Windows-Standalone.zip" Standalone
+            fi
+          else
+            # macOS
+            if [ -d "build/VelvetAfterglow_artefacts/Release/VST3" ]; then
+              cd build/VelvetAfterglow_artefacts/Release
+              zip -r "../../../package/VelvetAfterglow-macOS-VST3.zip" VST3
+              zip -r "../../../package/VelvetAfterglow-macOS-Standalone.zip" Standalone
+            fi
+          fi
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-${{ matrix.os }}
+          path: package/*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-${{ github.run_number }}
+          name: Velvet Afterglow Build ${{ github.run_number }}
+          body: Automated build of Velvet Afterglow VST3 instrument.
+          files: artifacts/**/*.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
